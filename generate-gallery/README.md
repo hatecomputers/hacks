@@ -1,4 +1,4 @@
-## generate-gallery
+# generate-gallery
 
 Shitty node script that generates a somewhat ok gallery for image previewing. 
 
