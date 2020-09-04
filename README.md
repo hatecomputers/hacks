@@ -5,4 +5,4 @@ a series of poorly crafted scripts to help you getting shit done.
 * Parsers
   * [generate-gallery](https://github.com/hatecomputers/hacks/tree/master/generate-gallery)
   
-Inspired by [@tomnomnom]'s(http://github.com/tomnomnom) hacks repository.
+Inspired by [@tomnomnom](http://github.com/tomnomnom) hacks repository.
