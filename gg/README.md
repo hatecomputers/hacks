@@ -14,7 +14,7 @@ Shitty node script that generates a somewhat ok gallery for image previewing.
 I usually use this in conjunction with [gowitness](https://github.com/sensepost/gowitness). So the workflow would be something along those lines:
 ```
 $ gowitness file -s <path-to-domains> -d <destination-directory> -T 1
-$ ./generate-gallery <path-to-your-images>
+$ gg <path-to-your-images>
 ```
 
 As the output, you should get a `index.html` containing the gallery.
