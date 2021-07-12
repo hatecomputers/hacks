@@ -3,7 +3,7 @@ a series of poorly crafted scripts to help you getting shit done.
 
 ## What you will find
 * Recon
-  * [recon-all-things](https://github.com/hatecomputers/hacks/tree/master/recon-allt-things)
+  * [recon-all-things](https://github.com/hatecomputers/hacks/tree/master/recon-all-things)
 * Helpers
   * [gg](https://github.com/hatecomputers/hacks/tree/master/generate-gallery)
   
