@@ -111,6 +111,10 @@ run_recon_dev () {
 	fi
 }
 
+run_subfinder () {
+	/usr/local/bin/subfinder -d $DOMAIN -silent >> $DIR/list9
+	echo -e "(Subfinder) ${YELLOW}$(cat $DIR/list9 | wc -l) domains${NC}"
+}
 
 get_from_programs_folder () {
 	PROGRAMS_FOLDER=/root/bugbounty/programs
@@ -145,6 +149,8 @@ show_report() {
 	echo -e "`pwd`/hosts.txt ${GREEN}$(cat $DIR/hosts.txt | wc -l)${NC}"
 	echo -e "`pwd`/domains.txt ${GREEN}$(cat $DIR/domains.txt | wc -l)${NC}"
 	echo -e "`pwd`/alive.txt ${GREEN}$(cat $DIR/alive.txt | wc -l)${NC}"
+	echo -e "`pwd`/urls.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}"
+	echo -e "`pwd`/params.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}"
 }
 
 notify_on_telegram() {
@@ -155,6 +161,8 @@ notify_on_telegram() {
 			\n<strong>Domains</strong>: `cat $DIR/domains.txt | wc -l` \
 			\n<strong>Hosts</strong>: `cat $DIR/hosts.txt | wc -l` \
 			\n<strong>Alive</strong>: `cat $DIR/alive.txt | wc -l` \
+			\n<strong>Urls</strong>: `cat $DIR/urls.txt | wc -l` \
+			\n<strong>Params</strong>: `cat $DIR/params.txt | wc -l`
 			\n\nHappy hacking." >> $DIR/telegram-temp.txt
 		
 		telegram-notifier $DIR/telegram-temp.txt &>/dev/null
@@ -164,12 +172,22 @@ notify_on_telegram() {
 	fi
 }
 
-taking_screenshots () {
-	echo "${YELLOW}[+]${NC} Taking screenshots of all alive domains..."
-	gowitness file -f $DIR/alive.txt $DIR --threads 30 --timeout 3
+run_aquatone() {
+	cat $DIR/alive.txt | /usr/local/bin/aquatone -chrome-path /snap/bin/chromium -out $DIR/screenshots
+}
 
-	echo "${YELLOW}[+]${NC} Generating gallery..." 
-	gg $DIR/screenshots
+get_all_cached_urls (){
+	echo -e "${YELLOW}[+]${NC} Getting all the cached urls..."
+	cat $DIR/alive.txt | gau >> $DIR/urls_temp.txt; cat $DIR/alive.txt | waybackurls >> $DIR/urls_temp.txt
+	cat $DIR/urls_temp.txt | sort -u | grep $TERM | grep -Ev "jpe?|png|woff|gif|svg|css" >> $DIR/urls.txt
+	rm $DIR/urls_temp.txt
+	echo -e "${GREEN}Done.${NC}"
+}
+
+get_all_url_params (){
+	echo -e "${YELLOW}[+]${NC} Extracting all url params.."
+	cat $DIR/urls.txt | grep -Eo "\w+=" | grep -v "utm" | sort -u >> $DIR/params.txt 
+	echo -e "${GREEN}Done.${NC}"
 }
 
 print_banner
@@ -180,6 +198,7 @@ run_findomain
 run_sublist3r
 run_crtsh
 run_github_subdomains
+run_subfinder
 get_from_programs_folder
 get_all_domains
 
@@ -189,12 +208,15 @@ cat $DIR/temp1 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp2 2
 cat $DIR/temp2 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp3 2>/dev/null
 cat $DIR/temp3 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp4 2>/dev/null
 
-cat $DIR/temp* | grep -Ev "^$|\[" | anew $DIR/hosts.txt
+cat $DIR/temp* | grep ${TERM} | grep -Ev "^$|\[" | anew $DIR/hosts.txt
 rm $DIR/temp*
 cat $DIR/hosts.txt | dnsx -silent -resp | awk -F " " '{print $2 "\t" $1}' | tr -d [] | sort -u >> $DIR/domains.txt
 echo -e "${GREEN}Done.${NC}"
 
 get_all_alive
+get_all_cached_urls
+get_all_url_params
+run_aquatone
 notify_on_telegram
 show_report
 echo -e "\nHappy hacking."
