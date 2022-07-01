@@ -23,7 +23,7 @@ const BUMBLE_API_METHODS = {
 }
 
 const defaultHeaders = {
-    'Cookie': 'session=s1:144:4EXOyqX2SJzn7JyrmjvHVptPgMHGKdFchcLFysAK;',
+    'Cookie': 'session=<session_cookie_goes_here>',
     'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:101.0) Gecko/20100101 Firefox/101.0',
     'X-Use-Session-Cookie': '1'
