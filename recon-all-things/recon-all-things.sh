@@ -1,8 +1,8 @@
 #!/bin/bash
 
-DOMAIN=$1
+DOMAIN=$2
 TERM=$(echo $DOMAIN | cut -d '.' -f1)
-DIR=$2
+DIR=$3
 
 # colors
 GREEN='\033[0;32m'
@@ -11,25 +11,29 @@ PURPLE='\033[1;36m'
 NC='\033[0m'
 
 if [ -z "$DOMAIN" ]; then
-       echo "DOMAIN has to have value"
+       echo "<domain> has to have value"
        echo "Usage: ./recon-all-things.sh <domain> <output_dir>"
        echo "Example: ./recon-all-things.sh tesla.com"
        exit 0
 fi
 
 if [ -z $DIR ]; then
-	DIR=$(pwd)
+	echo "<output_dir> has to have value"
+	echo "Usage: ./recon-all-things.sh <domain> <output_dir>"
+	echo "Example: ./recon-all-things.sh tesla.com"
+	exit 0
 fi
 
-if [ -n $DIR ]; then
-	echo -e "${YELLOW}[-]${NC} $DIR was found."
-	DATE=$(date +"%d%m%y")
-	DIR=$DIR/recon$DATE
-	echo -e "${YELLOW}[-]${NC} Creating a new scan at $DIR..."
+mkdir $DIR
+IS_PREVIOUS_RECON=1
+if [ $? -ne 0 ]; then
+	TEMP_DIR=$(pwd)/$(echo $DIR)/temp
+	DIR=$(pwd)/$(echo $DIR)/temp
+	IS_PREVIOUS_RECON=0
+	mkdir $DIR
 fi
 
-mkdir -p $DIR
-rm $DIR/list* $DIR/hosts.txt $DIR/domains.txt $DIR/alive.txt 2>/dev/null
+# rm $DIR/list* $DIR/hosts.txt $DIR/domains.txt $DIR/alive.txt 2>/dev/null
 
 print_banner() {
 echo -e "${PURPLE}"
@@ -56,6 +60,7 @@ run_security_trails () {
 	if [ -z $SECURITY_TRAILS_API ]; then
 		echo -e "(Security Trails) key ${RED}was not${NC} found. Skipping..."
 	else
+	    echo $SECURITY_TRAILS_API
 		curl -s "https://api.securitytrails.com/v1/domain/$DOMAIN/subdomains?children_only=true" -H "apikey: $SECURITY_TRAILS_API" | jq -r .subdomains[] 2>/dev/null | xargs -I@ sh -c "echo @.$DOMAIN >> $DIR/list1"
 		echo -e "(Security Trails) ${YELLOW}$(cat $DIR/list1 | wc -l) domains${NC}"
 	
@@ -68,7 +73,7 @@ run_assetfinder () {
 }
 
 run_sonar () {
-	curl -s https://sonar.omnisint.io/subdomains/$DOMAIN | jq -r .[] >> $DIR/list3
+	curl -s https://sonar.omnisint.io/subdomains/$DOMAIN >> $DIR/list3
 	echo -e "(Sonar) ${YELLOW}$(cat $DIR/list3 | wc -l) domains${NC}"
 }
 
@@ -138,6 +143,19 @@ get_all_domains() {
 	echo -e "${GREEN}Done.${NC}"
 }
 
+get_additional_domains() {
+	echo -e "${YELLOW}[+]${NC} Spinning up the wheels to get more domains..."
+	cat $DIR/hosts.txt | cut -f2 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp1 2>/dev/null 
+	cat $DIR/temp1 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp2 2>/dev/null
+	cat $DIR/temp2 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp3 2>/dev/null
+	cat $DIR/temp3 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp4 2>/dev/null
+
+	cat $DIR/temp* | grep ${TERM} | grep -Ev "^$|\[" | anew $DIR/hosts.txt
+	rm $DIR/temp*
+	cat $DIR/hosts.txt | dnsx -silent -resp | awk -F " " '{print $2 "\t" $1}' | tr -d [] | sort -u >> $DIR/domains.txt
+	echo -e "${GREEN}Done.${NC}"
+}
+
 get_all_alive() {
 	echo -e "${YELLOW}[+]${NC} Checking for domains with a webserver. This might take a awhile... "
 	cat $DIR/hosts.txt | httpx -silent -threads 100 -no-color -retries 0 -timeout 3 >> $DIR/alive.txt
@@ -145,12 +163,13 @@ get_all_alive() {
 }
 
 show_report() {
-	echo -e "\n${YELLOW} Final report:${NC}"
-	echo -e "`pwd`/hosts.txt ${GREEN}$(cat $DIR/hosts.txt | wc -l)${NC}"
-	echo -e "`pwd`/domains.txt ${GREEN}$(cat $DIR/domains.txt | wc -l)${NC}"
-	echo -e "`pwd`/alive.txt ${GREEN}$(cat $DIR/alive.txt | wc -l)${NC}"
-	echo -e "`pwd`/urls.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}"
-	echo -e "`pwd`/params.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}"
+echo -e "\n${YELLOW} Final report:${NC}
+Generated at: `date`
+`pwd`/hosts.txt ${GREEN}$(cat $DIR/hosts.txt | wc -l)${NC}
+`pwd`/domains.txt ${GREEN}$(cat $DIR/domains.txt | wc -l)${NC}
+`pwd`/alive.txt ${GREEN}$(cat $DIR/alive.txt | wc -l)${NC}
+`pwd`/urls.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}
+`pwd`/params.txt ${GREEN}$(cat $DIR/urls.txt | wc -l)${NC}\n" | tee -a $DIR/report.txt
 }
 
 notify_on_telegram() {
@@ -173,50 +192,90 @@ notify_on_telegram() {
 }
 
 run_aquatone() {
-	cat $DIR/alive.txt | /usr/local/bin/aquatone -chrome-path /snap/bin/chromium -out $DIR/screenshots
+	cat $DIR/alive.txt | /usr/local/bin/aquatone -chrome-path /usr/local/bin/chromium -out $DIR/screenshots
 }
 
 get_all_cached_urls (){
 	echo -e "${YELLOW}[+]${NC} Getting all the cached urls..."
-	cat $DIR/alive.txt | gau >> $DIR/urls_temp.txt; cat $DIR/alive.txt | waybackurls >> $DIR/urls_temp.txt
-	cat $DIR/urls_temp.txt | sort -u | grep $TERM | grep -Ev "jpe?|png|woff|gif|svg|css" >> $DIR/urls.txt
+	cat $DIR/alive.txt | gauplus -b ttf,woff,svg,png,jpg,ico,gif,jpeg,eot,css,woff2 -subs | anew $DIR/urls_temp.txt; 
+	cat $DIR/alive.txt | waybackurls | anew $DIR/urls_temp.txt
+	cat $DIR/urls_temp.txt | sort -u | grep $TERM | grep -Ev "ttf|woff|svg|png|jpg|ico|gif|jpeg|eot|css|woff2 " >> $DIR/urls.txt
 	rm $DIR/urls_temp.txt
 	echo -e "${GREEN}Done.${NC}"
 }
 
 get_all_url_params (){
 	echo -e "${YELLOW}[+]${NC} Extracting all url params.."
-	cat $DIR/urls.txt | grep -Eo "\w+=" | grep -v "utm" | sort -u >> $DIR/params.txt 
+	cat $DIR/urls.txt | /usr/local/bin/unfurl -unique keypairs  | grep -v "utm" | sort -u >> $DIR/params.txt 
 	echo -e "${GREEN}Done.${NC}"
 }
 
 print_banner
-run_security_trails
-run_assetfinder
-run_sonar
-run_findomain
-run_sublist3r
-run_crtsh
-run_github_subdomains
-run_subfinder
-get_from_programs_folder
-get_all_domains
 
-echo -e "${YELLOW}[+]${NC} Spinning up the wheels to get more domains..."
-cat $DIR/hosts.txt | cut -f2 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp1 2>/dev/null 
-cat $DIR/temp1 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp2 2>/dev/null
-cat $DIR/temp2 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp3 2>/dev/null
-cat $DIR/temp3 | xargs -I@ -P50 sh -c "assetfinder @ -subs-only" >> $DIR/temp4 2>/dev/null
+for opt in ${@};
+do 
+	if [[ $opt = "-domains" ]];
+	then
+		run_security_trails
+		run_assetfinder
+		run_sonar
+		run_findomain
+		run_sublist3r
+		run_crtsh
+		run_github_subdomains
+		run_subfinder
+		get_from_programs_folder
+		get_all_domains
+	fi
 
-cat $DIR/temp* | grep ${TERM} | grep -Ev "^$|\[" | anew $DIR/hosts.txt
-rm $DIR/temp*
-cat $DIR/hosts.txt | dnsx -silent -resp | awk -F " " '{print $2 "\t" $1}' | tr -d [] | sort -u >> $DIR/domains.txt
-echo -e "${GREEN}Done.${NC}"
+	if [[ $opt = "-additional-domains" ]];
+	then
+		get_additional_domains
+	fi
 
-get_all_alive
-get_all_cached_urls
-get_all_url_params
-run_aquatone
-notify_on_telegram
-show_report
+	if [[ $opt = "-alive" ]];
+	then
+		get_all_alive
+	fi 
+
+
+	if [[ $opt = "-urls" ]];
+	then
+		get_all_cached_urls
+		get_all_url_params
+	fi
+
+	if [[ $opt = "-screenshots" ]];
+	then
+		run_aquatone
+	fi
+
+	if [[ $opt = "-notify" ]];
+	then
+		notify_on_telegram
+	fi
+
+	if [[ $opt = "-default" ]]; 
+	then
+		run_security_trails
+		run_assetfinder
+		run_sonar
+		run_findomain
+		run_sublist3r
+		run_crtsh
+		run_github_subdomains
+		run_subfinder
+		get_from_programs_folder
+		get_all_domains
+		get_additional_domains
+		get_all_alive
+		get_all_cached_urls
+		get_all_url_params
+		run_aquatone
+		notify_on_telegram
+		show_report
+	fi
+done
+
+# show_report
 echo -e "\nHappy hacking."
